@@ -41,7 +41,7 @@ The following environment variables can be used to configure the application:
 
 You can pull the image from GHCR (once published):
 ```bash
-docker pull ghcr.io/<your-username>/ultralytics-fastapi:main
+docker pull ghcr.io/timgreen/ultralytics-fastapi:main
 ```
 
 Or build it locally:
