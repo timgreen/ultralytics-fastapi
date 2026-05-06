@@ -10,8 +10,9 @@ HOST = os.getenv("HOST", "localhost")
 PORT = int(os.getenv("PORT", "8080"))
 DATA_DIR = os.getenv("DATA_DIR", "/data")
 
-# Ensure data directory exists
+# Ensure data directory exists and set as working directory
 os.makedirs(DATA_DIR, exist_ok=True)
+os.chdir(DATA_DIR)
 
 app = FastAPI(title="Ultralytics YOLO FastAPI")
 
