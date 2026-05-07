@@ -30,7 +30,6 @@ model = YOLO("yolov8n.pt")
 @app.get("/", include_in_schema=False)
 async def root():
     return {"message": "Ultralytics YOLO FastAPI is running"}
-
 @app.post(
     "/predict",
     summary="Run YOLO inference on an image",
@@ -41,13 +40,15 @@ async def predict(
     format: Literal["json", "image", "image+metadata"] = Query(
         "json",
         description="The desired response format. 'json' returns prediction metadata, 'image' returns the annotated image, 'image+metadata' returns the image with JSON metadata in the 'X-Inference-Results' header."
-    )
+    ),
+    threshold: float = Query(0.5, ge=0.0, le=1.0, description="Confidence threshold for filtering detections.")
 ):
     """
     Runs YOLOv8 inference on the uploaded image.
 
     - **file**: Image file (JPG, PNG, etc.)
     - **format**: 'json' (default), 'image', or 'image+metadata'
+    - **threshold**: Confidence threshold (0.0 to 1.0, default 0.5)
     """
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File provided is not an image.")
@@ -58,16 +59,19 @@ async def predict(
         image = Image.open(io.BytesIO(contents))
 
         # Run inference
-        results = model(image)
+        results = model(image, conf=threshold)
 
         # Prepare JSON predictions
         predictions = []
         for r in results:
-            boxes = r.boxes
-            for box in boxes:
-                # get box coordinates in (top, left, bottom, right) format
-                b = box.xyxy[0].tolist() 
-                c = box.cls.item()
+...
+        # Handle image formats
+        # Plot results on the image
+        # annotated_frame is BGR numpy array
+        # Note: results[0].plot() respects the 'conf' passed to the model() call
+        annotated_frame = results[0].plot()
+        # Convert BGR to RGB
+
                 conf = box.conf.item()
                 predictions.append({
                     "box": {

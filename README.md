@@ -58,6 +58,7 @@ docker run -p 8080:8080 ultralytics-fastapi
 
 **Parameters**:
 - `format` (query string, optional): `json` (default), `image`, or `image+metadata`.
+- `threshold` (query string, optional): Confidence threshold between 0.0 and 1.0 (default `0.5`).
 
 **Request**: Multipart form-data with an `file` field containing the image.
 
