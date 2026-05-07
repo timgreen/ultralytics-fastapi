@@ -3,7 +3,7 @@ import io
 import json
 import shutil
 from datetime import datetime
-from typing import Literal, Optional, Dict, Tuple
+from typing import Literal, Dict, Tuple
 
 import uvicorn
 from fastapi import FastAPI, File, UploadFile, HTTPException, Response, Query, Depends
@@ -30,7 +30,7 @@ os.chdir(DATA_DIR)
 app = FastAPI(
     title="Ultralytics YOLO FastAPI",
     description="A simple FastAPI wrapper for Ultralytics YOLO models.",
-    version="0.6.0"
+    version="0.6.2"
 )
 
 # Model Cache to avoid repeated loading
@@ -41,8 +41,8 @@ class InferenceParams:
     """Grouped parameters for model selection and image storage."""
     def __init__(
         self,
-        model_name: Optional[str] = Query(None, description="Ultralytics model name (e.g., yolo26n.pt)."),
-        usecase: Optional[str] = Query(None, description="Load model from <DATA_DIR>/<usecase>/<task>.pt."),
+        model_name: str | None = Query(None, description="Ultralytics model name (e.g., yolo26n.pt)."),
+        usecase: str | None = Query(None, description="Load model from <DATA_DIR>/<usecase>/<task>.pt."),
         store_image: bool = Query(False, description="Save uploaded image under <usecase_dir>/saved/. Only works if 'usecase' is set.")
     ):
         self.model_name = model_name
@@ -223,10 +223,10 @@ async def predict(
 async def classify(
     file: UploadFile = File(..., description="The image file to classify."),
     params: InferenceParams = Depends(),
-    x1: Optional[float] = Query(None, description="ROI left coordinate"),
-    y1: Optional[float] = Query(None, description="ROI top coordinate"),
-    x2: Optional[float] = Query(None, description="ROI right coordinate"),
-    y2: Optional[float] = Query(None, description="ROI bottom coordinate")
+    x1: float | None = Query(None, description="ROI left coordinate"),
+    y1: float | None = Query(None, description="ROI top coordinate"),
+    x2: float | None = Query(None, description="ROI right coordinate"),
+    y2: float | None = Query(None, description="ROI bottom coordinate")
 ):
     try:
         image, model, model_id = await load_image_and_model(file, params, "classify")
