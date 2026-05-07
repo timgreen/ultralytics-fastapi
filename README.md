@@ -4,10 +4,12 @@ A simple FastAPI wrapper for Ultralytics YOLO models, designed to be easily depl
 
 ## Features
 
-- **FastAPI Endpoint**: `/predict` for image inference.
-- **Ultralytics YOLO**: Uses the latest YOLOv8 (defaulting to `yolov8n.pt`).
+- **FastAPI Endpoints**: 
+  - `/predict`: Object detection.
+  - `/classify`: Image or ROI classification.
+- **Ultralytics YOLO**: Uses YOLOv8 nano models (`yolov8n.pt` and `yolov8n-cls.pt`).
 - **Dockerized**: Based on the official Ultralytics Docker image.
-- **CI/CD**: Automatically builds and pushes images to GHCR.
+- **CI/CD**: Automatically builds and pushes images to GHCR using Node.js 24.
 
 ## Environment Variables
 
@@ -32,74 +34,66 @@ The following environment variables can be used to configure the application:
    ```bash
    python main.py
    ```
-   Or using uvicorn directly:
-   ```bash
-   uvicorn main:app --host localhost --port 8080
-   ```
 
 ### Running with Docker
 
-You can pull the image from GHCR (once published):
 ```bash
 docker pull ghcr.io/timgreen/ultralytics-fastapi:main
-```
-
-Or build it locally:
-```bash
-docker build -t ultralytics-fastapi .
-docker run -p 8080:8080 ultralytics-fastapi
+docker run -p 8080:8080 -v $(pwd)/data:/data ghcr.io/timgreen/ultralytics-fastapi:main
 ```
 
 ## API Usage
 
-### Predict
+### 1. Object Detection (`/predict`)
 
 **Endpoint**: `POST /predict`
 
 **Parameters**:
-- `format` (query string, optional): `json` (default), `image`, or `image+metadata`.
-- `threshold` (query string, optional): Confidence threshold between 0.0 and 1.0 (default `0.5`).
+- `format` (optional): `json` (default), `image`, or `image+metadata`.
+- `threshold` (optional): Confidence threshold (0.0 to 1.0, default `0.5`).
 
-**Request**: Multipart form-data with an `file` field containing the image.
-
-**Example using `curl` (JSON response)**:
-
+**Example (JSON)**:
 ```bash
-curl -X POST -F "file=@path/to/your/image.jpg" http://localhost:8080/predict
+curl -X POST -F "file=@image.jpg" http://localhost:8080/predict
 ```
 
-**Example using `curl` (Annotated image response)**:
-
+**Example (Annotated Image)**:
 ```bash
-curl -X POST -F "file=@path/to/your/image.jpg" "http://localhost:8080/predict?format=image" --output results.jpg
+curl -X POST -F "file=@image.jpg" "http://localhost:8080/predict?format=image" --output results.jpg
 ```
 
-**Example using `curl` (Image + Metadata response)**:
-Returns the image in the body and JSON in the `X-Inference-Results` header.
+---
+
+### 2. Image Classification (`/classify`)
+
+**Endpoint**: `POST /classify`
+
+**Parameters**:
+- `x1`, `y1`, `x2`, `y2` (optional): Coordinates for a Region of Interest (ROI). If all 4 are provided, the image is cropped before classification.
+
+**Example (Whole image)**:
 ```bash
-curl -v -X POST -F "file=@path/to/your/image.jpg" "http://localhost:8080/predict?format=image+metadata" --output results.jpg
+curl -X POST -F "file=@image.jpg" http://localhost:8080/classify
+```
+
+**Example (With ROI)**:
+```bash
+curl -X POST -F "file=@image.jpg" "http://localhost:8080/classify?x1=100&y1=100&x2=400&y2=400"
 ```
 
 **Example Response**:
-
 ```json
 {
-  "predictions": [
-    {
-      "box": {
-        "x1": 100.0,
-        "y1": 150.0,
-        "x2": 200.0,
-        "y2": 250.0
-      },
-      "class": "person",
-      "confidence": 0.95
-    }
-  ]
+  "top1": {
+    "class": "tabby",
+    "confidence": 0.85
+  },
+  "top5": [ ... ],
+  "roi_used": { "x1": 100, "y1": 100, "x2": 400, "y2": 400 }
 }
 ```
 
 ## Development
 
-- The project uses `black` for formatting and `flake8` for linting.
-- Models are automatically downloaded by the Ultralytics library on first use.
+- The project uses `flake8` for linting in CI.
+- Models are automatically downloaded to `DATA_DIR`.
