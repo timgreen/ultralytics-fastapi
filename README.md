@@ -7,6 +7,7 @@ A simple FastAPI wrapper for Ultralytics YOLO models, designed to be easily depl
 - **FastAPI Endpoints**: 
   - `/predict`: Object detection.
   - `/classify`: Image or ROI classification.
+  - `/init`: Initialize a new usecase directory with default models.
 - **Ultralytics YOLO**: Uses YOLO26 nano models by default (`yolo26n.pt` and `yolo26n-cls.pt`).
 - **Dynamic Model Loading**: Specify any Ultralytics model name in the request.
 - **Usecase Support**: Organize custom models and save request images by usecase directory.
@@ -56,6 +57,35 @@ curl -X POST -F "file=@image.jpg" "http://localhost:8080/predict?usecase=garage&
 **Example (Usecase + ROI + Store Image)**:
 ```bash
 curl -X POST -F "file=@image.jpg" "http://localhost:8080/classify?usecase=garage&store_image=true&x1=100&y1=100&x2=400&y2=400"
+```
+
+**Example Response**:
+```json
+{
+  "top1": {
+    "class": "tabby",
+    "confidence": 0.85
+  },
+  "top5": [ ... ],
+  "roi_used": { "x1": 100, "y1": 100, "x2": 400, "y2": 400 }
+}
+```
+
+---
+
+### 3. Initialize Usecase (`/init`)
+
+**Endpoint**: `POST /init`
+
+**Parameters**:
+- `usecase` (required): Name of the usecase.
+- `task` (optional): `classify` (default) or `predict`.
+
+**Description**: Creates a directory `<DATA_DIR>/<usecase>/` and copies the corresponding default YOLO26 model as `<task>.pt`. This is a convenient way to start a new project before fine-tuning.
+
+**Example**:
+```bash
+curl -X POST "http://localhost:8080/init?usecase=garage&task=classify"
 ```
 
 ## Development

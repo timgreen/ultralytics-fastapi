@@ -1,6 +1,7 @@
 import os
 import io
 import json
+import shutil
 from datetime import datetime
 from typing import Literal, Optional, Dict, Tuple
 
@@ -29,7 +30,7 @@ os.chdir(DATA_DIR)
 app = FastAPI(
     title="Ultralytics YOLO FastAPI",
     description="A simple FastAPI wrapper for Ultralytics YOLO models.",
-    version="0.5.0"
+    version="0.6.0"
 )
 
 # Model Cache to avoid repeated loading
@@ -118,6 +119,46 @@ async def load_image_and_model(
 @app.get("/", include_in_schema=False)
 async def root():
     return {"message": "Ultralytics YOLO FastAPI is running"}
+
+
+@app.post(
+    "/init",
+    summary="Initialize a new usecase",
+    description="Creates a new usecase directory and copies the default YOLO26 model as the starting point."
+)
+async def init_usecase(
+    usecase: str = Query(..., description="Name of the usecase to initialize."),
+    task: Literal["predict", "classify"] = Query("classify", description="The task type (predict or classify).")
+):
+    """
+    Initializes a usecase folder and populates it with a default model.
+    """
+    usecase_dir = os.path.join(DATA_DIR, usecase)
+    target_path = os.path.join(usecase_dir, f"{task}.pt")
+
+    if os.path.exists(target_path):
+        raise HTTPException(status_code=400, detail=f"Model already exists for usecase '{usecase}' at {target_path}")
+
+    # Ensure usecase directory exists
+    os.makedirs(usecase_dir, exist_ok=True)
+
+    # Determine source model
+    default_model_name = DEFAULT_CLS_MODEL if task == "classify" else DEFAULT_DET_MODEL
+    
+    # Ensure source model is downloaded by triggering get_model
+    get_model(default_model_name)
+    source_path = os.path.join(MODELS_DIR, default_model_name)
+
+    try:
+        shutil.copy2(source_path, target_path)
+        return {
+            "message": f"Usecase '{usecase}' initialized successfully.",
+            "usecase": usecase,
+            "task": task,
+            "model_path": target_path
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to initialize usecase: {str(e)}")
 
 
 @app.post(
