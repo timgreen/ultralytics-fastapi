@@ -30,6 +30,7 @@ model = YOLO("yolov8n.pt")
 @app.get("/", include_in_schema=False)
 async def root():
     return {"message": "Ultralytics YOLO FastAPI is running"}
+
 @app.post(
     "/predict",
     summary="Run YOLO inference on an image",
@@ -64,14 +65,11 @@ async def predict(
         # Prepare JSON predictions
         predictions = []
         for r in results:
-...
-        # Handle image formats
-        # Plot results on the image
-        # annotated_frame is BGR numpy array
-        # Note: results[0].plot() respects the 'conf' passed to the model() call
-        annotated_frame = results[0].plot()
-        # Convert BGR to RGB
-
+            boxes = r.boxes
+            for box in boxes:
+                # get box coordinates in (top, left, bottom, right) format
+                b = box.xyxy[0].tolist() 
+                c = box.cls.item()
                 conf = box.conf.item()
                 predictions.append({
                     "box": {
@@ -90,6 +88,7 @@ async def predict(
         # Handle image formats
         # Plot results on the image
         # annotated_frame is BGR numpy array
+        # Note: results[0].plot() respects the 'conf' passed to the model() call
         annotated_frame = results[0].plot()
         # Convert BGR to RGB
         annotated_frame_rgb = annotated_frame[..., ::-1]
