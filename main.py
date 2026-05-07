@@ -1,6 +1,7 @@
 import os
 import io
 import json
+from datetime import datetime
 import numpy as np
 from typing import Literal, Optional, Dict
 from fastapi import FastAPI, File, UploadFile, HTTPException, Response, Query
@@ -28,7 +29,7 @@ os.chdir(DATA_DIR)
 app = FastAPI(
     title="Ultralytics YOLO FastAPI",
     description="A simple FastAPI wrapper for Ultralytics YOLO models.",
-    version="0.3.0"
+    version="0.4.0"
 )
 
 # Model Cache to avoid repeated loading
@@ -70,6 +71,18 @@ def resolve_model_path(usecase: Optional[str], model_name: Optional[str], task: 
     
     return DEFAULT_DET_MODEL if task == "predict" else DEFAULT_CLS_MODEL
 
+def save_request_image(image: Image.Image, usecase: str):
+    """Save the request image under <DATA_DIR>/<usecase>/saved/ with a timestamp."""
+    saved_dir = os.path.join(DATA_DIR, usecase, "saved")
+    os.makedirs(saved_dir, exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    filename = f"{timestamp}.jpg"
+    filepath = os.path.join(saved_dir, filename)
+    
+    image.convert("RGB").save(filepath, "JPEG")
+    return filepath
+
 @app.get("/", include_in_schema=False)
 async def root():
     return {"message": "Ultralytics YOLO FastAPI is running"}
@@ -83,6 +96,7 @@ async def predict(
     file: UploadFile = File(..., description="The image file to run inference on."),
     model_name: Optional[str] = Query(None, description="Ultralytics model name to use for detection."),
     usecase: Optional[str] = Query(None, description="Load model from <DATA_DIR>/<usecase>/predict.pt"),
+    store_image: bool = Query(False, description="Save the uploaded image under <usecase_dir>/saved/. Only works if 'usecase' is set."),
     format: Literal["json", "image", "image+metadata"] = Query(
         "json",
         description="Response format. 'json', 'image', or 'image+metadata'."
@@ -91,6 +105,9 @@ async def predict(
 ):
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File provided is not an image.")
+    
+    if store_image and not usecase:
+        raise HTTPException(status_code=400, detail="'store_image' can only be used together with 'usecase'.")
 
     try:
         resolved_name = resolve_model_path(usecase, model_name, "predict")
@@ -98,6 +115,9 @@ async def predict(
         
         contents = await file.read()
         image = Image.open(io.BytesIO(contents))
+        
+        if store_image and usecase:
+            save_request_image(image, usecase)
 
         results = model(image, conf=threshold)
 
@@ -148,6 +168,7 @@ async def classify(
     file: UploadFile = File(..., description="The image file to classify."),
     model_name: Optional[str] = Query(None, description="Ultralytics model name to use for classification."),
     usecase: Optional[str] = Query(None, description="Load model from <DATA_DIR>/<usecase>/classify.pt"),
+    store_image: bool = Query(False, description="Save the uploaded image under <usecase_dir>/saved/. Only works if 'usecase' is set."),
     x1: Optional[float] = Query(None, description="ROI left coordinate"),
     y1: Optional[float] = Query(None, description="ROI top coordinate"),
     x2: Optional[float] = Query(None, description="ROI right coordinate"),
@@ -155,6 +176,9 @@ async def classify(
 ):
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File provided is not an image.")
+    
+    if store_image and not usecase:
+        raise HTTPException(status_code=400, detail="'store_image' can only be used together with 'usecase'.")
 
     try:
         resolved_name = resolve_model_path(usecase, model_name, "classify")
@@ -162,6 +186,9 @@ async def classify(
         
         contents = await file.read()
         image = Image.open(io.BytesIO(contents))
+        
+        if store_image and usecase:
+            save_request_image(image, usecase)
 
         if all(v is not None for v in [x1, y1, x2, y2]):
             image = image.crop((x1, y1, x2, y2))
