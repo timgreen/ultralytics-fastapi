@@ -4,7 +4,6 @@ import json
 from datetime import datetime
 from typing import Literal, Optional, Dict, Tuple
 
-import numpy as np
 import uvicorn
 from fastapi import FastAPI, File, UploadFile, HTTPException, Response, Query, Depends
 from PIL import Image
@@ -48,7 +47,7 @@ class InferenceParams:
         self.model_name = model_name
         self.usecase = usecase
         self.store_image = store_image
-        
+
         # Validation logic
         if self.usecase and self.model_name:
             raise HTTPException(status_code=400, detail="Cannot use 'usecase' and 'model_name' together.")
@@ -65,7 +64,7 @@ def get_model(model_name: str) -> YOLO:
                 model_path = os.path.join(MODELS_DIR, model_name)
             else:
                 model_path = model_name
-                
+
             model_cache[model_name] = YOLO(model_path)
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Failed to load model '{model_name}': {str(e)}")
@@ -76,16 +75,16 @@ def save_request_image(image: Image.Image, usecase: str):
     """Save the request image under <DATA_DIR>/<usecase>/saved/ with a timestamp."""
     saved_dir = os.path.join(DATA_DIR, usecase, "saved")
     os.makedirs(saved_dir, exist_ok=True)
-    
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     filepath = os.path.join(saved_dir, f"{timestamp}.jpg")
-    
+
     image.convert("RGB").save(filepath, "JPEG")
 
 
 async def load_image_and_model(
-    file: UploadFile, 
-    params: InferenceParams, 
+    file: UploadFile,
+    params: InferenceParams,
     task: str
 ) -> Tuple[Image.Image, YOLO, str]:
     """Shared logic for loading image, model, and handling storage."""
@@ -97,22 +96,22 @@ async def load_image_and_model(
         resolved_name = os.path.join(DATA_DIR, params.usecase, f"{task}.pt")
         if not os.path.exists(resolved_name):
             raise HTTPException(
-                status_code=500, 
+                status_code=500,
                 detail=f"Usecase model not found at {resolved_name}."
             )
     else:
         resolved_name = params.model_name or (DEFAULT_DET_MODEL if task == "predict" else DEFAULT_CLS_MODEL)
 
     model = get_model(resolved_name)
-    
+
     # Read image
     contents = await file.read()
     image = Image.open(io.BytesIO(contents))
-    
+
     # Optional storage
     if params.store_image and params.usecase:
         save_request_image(image, params.usecase)
-        
+
     return image, model, resolved_name
 
 
@@ -130,14 +129,14 @@ async def predict(
     file: UploadFile = File(..., description="The image file to run inference on."),
     params: InferenceParams = Depends(),
     format: Literal["json", "image", "image+metadata"] = Query(
-        "json", 
+        "json",
         description="Response format. 'json', 'image', or 'image+metadata' (image with JSON in headers)."
     ),
     threshold: float = Query(0.5, ge=0.0, le=1.0, description="Confidence threshold.")
 ):
     try:
         image, model, model_id = await load_image_and_model(file, params, "predict")
-        
+
         # Run inference
         results = model(image, conf=threshold)
 
@@ -145,7 +144,7 @@ async def predict(
         predictions = []
         for r in results:
             for box in r.boxes:
-                b = box.xyxy[0].tolist() 
+                b = box.xyxy[0].tolist()
                 predictions.append({
                     "box": {"x1": b[0], "y1": b[1], "x2": b[2], "y2": b[3]},
                     "class": model.names[int(box.cls.item())],
@@ -162,11 +161,11 @@ async def predict(
 
         buf = io.BytesIO()
         img.save(buf, format="JPEG")
-        
+
         headers = {}
         if format == "image+metadata":
             headers["X-Inference-Results"] = json.dumps({"predictions": predictions, "model": model_id})
-            
+
         return Response(content=buf.getvalue(), media_type="image/jpeg", headers=headers)
 
     except HTTPException as e:
@@ -198,9 +197,9 @@ async def classify(
         # Run inference
         results = model(image)
         probs = results[0].probs
-        
+
         top5 = [
-            {"class": model.names[idx], "confidence": conf} 
+            {"class": model.names[idx], "confidence": conf}
             for idx, conf in zip(probs.top5, probs.top5conf.tolist())
         ]
 
