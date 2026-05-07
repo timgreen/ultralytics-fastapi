@@ -9,6 +9,7 @@ A simple FastAPI wrapper for Ultralytics YOLO models, designed to be easily depl
   - `/classify`: Image or ROI classification.
 - **Ultralytics YOLO**: Uses YOLO26 nano models by default (`yolo26n.pt` and `yolo26n-cls.pt`).
 - **Dynamic Model Loading**: Specify any Ultralytics model name in the request.
+- **Usecase Support**: Organize custom models by usecase directory.
 - **Dockerized**: Based on the official Ultralytics Docker image.
 - **CI/CD**: Automatically builds and pushes images to GHCR using Node.js 24.
 
@@ -27,13 +28,17 @@ A simple FastAPI wrapper for Ultralytics YOLO models, designed to be easily depl
 **Endpoint**: `POST /predict`
 
 **Parameters**:
-- `model_name` (optional): Ultralytics model identifier (default `yolo26n.pt`).
+- `model_name` (optional): Ultralytics model identifier.
+- `usecase` (optional): Load model from `<DATA_DIR>/<usecase>/predict.pt`.
 - `format` (optional): `json` (default), `image`, or `image+metadata`.
 - `threshold` (optional): Confidence threshold (0.0 to 1.0, default `0.5`).
 
-**Example (Custom Model)**:
+*Note: `model_name` and `usecase` are mutually exclusive.*
+
+**Example (Usecase)**:
 ```bash
-curl -X POST -F "file=@image.jpg" "http://localhost:8080/predict?model_name=yolov10s.pt"
+# Loads /data/garage/predict.pt
+curl -X POST -F "file=@image.jpg" "http://localhost:8080/predict?usecase=garage"
 ```
 
 ---
@@ -43,15 +48,18 @@ curl -X POST -F "file=@image.jpg" "http://localhost:8080/predict?model_name=yolo
 **Endpoint**: `POST /classify`
 
 **Parameters**:
-- `model_name` (optional): Ultralytics model identifier (default `yolo26n-cls.pt`).
+- `model_name` (optional): Ultralytics model identifier.
+- `usecase` (optional): Load model from `<DATA_DIR>/<usecase>/classify.pt`.
 - `x1`, `y1`, `x2`, `y2` (optional): Coordinates for a Region of Interest (ROI).
 
-**Example (Custom Model + ROI)**:
+**Example (Usecase + ROI)**:
 ```bash
-curl -X POST -F "file=@image.jpg" "http://localhost:8080/classify?model_name=yolo26s-cls.pt&x1=0&y1=0&x2=200&y2=200"
+# Loads /data/garage/classify.pt
+curl -X POST -F "file=@image.jpg" "http://localhost:8080/classify?usecase=garage&x1=100&y1=100&x2=400&y2=400"
 ```
 
 ## Development
 
 - The project uses `flake8` for linting in CI.
-- Models are automatically downloaded to `DATA_DIR/models/` and cached in memory.
+- Models are automatically downloaded to `DATA_DIR/models/` or loaded from custom usecase paths.
+- All models are cached in memory after the first load.

@@ -14,6 +14,10 @@ PORT = int(os.getenv("PORT", "8080"))
 DATA_DIR = os.getenv("DATA_DIR", "/data")
 MODELS_DIR = os.path.join(DATA_DIR, "models")
 
+# Default models
+DEFAULT_DET_MODEL = "yolo26n.pt"
+DEFAULT_CLS_MODEL = "yolo26n-cls.pt"
+
 # Ensure directories exist
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(MODELS_DIR, exist_ok=True)
@@ -24,13 +28,14 @@ os.chdir(DATA_DIR)
 app = FastAPI(
     title="Ultralytics YOLO FastAPI",
     description="A simple FastAPI wrapper for Ultralytics YOLO models.",
-    version="0.2.1"
+    version="0.3.0"
 )
 
 # Model Cache to avoid repeated loading
 model_cache: Dict[str, YOLO] = {}
 
 def get_model(model_name: str) -> YOLO:
+    """Load and cache YOLO model from name or path."""
     if model_name not in model_cache:
         try:
             # If the model_name is a standard filename, store/load it from the models directory
@@ -44,9 +49,26 @@ def get_model(model_name: str) -> YOLO:
             raise HTTPException(status_code=400, detail=f"Failed to load model '{model_name}': {str(e)}")
     return model_cache[model_name]
 
-# Default models
-DEFAULT_DET_MODEL = "yolo26n.pt"
-DEFAULT_CLS_MODEL = "yolo26n-cls.pt"
+def resolve_model_path(usecase: Optional[str], model_name: Optional[str], task: str) -> str:
+    """Resolve model path based on usecase or model_name."""
+    if usecase and model_name:
+        raise HTTPException(status_code=400, detail="Cannot use 'usecase' and 'model_name' together.")
+    
+    if usecase:
+        # Use case logic: <DATA_DIR>/<usecase>/<task>.pt
+        model_path = os.path.join(DATA_DIR, usecase, f"{task}.pt")
+        if not os.path.exists(model_path):
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Usecase model not found at {model_path}. Please ensure the file exists."
+            )
+        return model_path
+    
+    # If no usecase, return model_name or the task-specific default
+    if model_name:
+        return model_name
+    
+    return DEFAULT_DET_MODEL if task == "predict" else DEFAULT_CLS_MODEL
 
 @app.get("/", include_in_schema=False)
 async def root():
@@ -59,7 +81,8 @@ async def root():
 )
 async def predict(
     file: UploadFile = File(..., description="The image file to run inference on."),
-    model_name: str = Query(DEFAULT_DET_MODEL, description="Ultralytics model name to use for detection."),
+    model_name: Optional[str] = Query(None, description="Ultralytics model name to use for detection."),
+    usecase: Optional[str] = Query(None, description="Load model from <DATA_DIR>/<usecase>/predict.pt"),
     format: Literal["json", "image", "image+metadata"] = Query(
         "json",
         description="Response format. 'json', 'image', or 'image+metadata'."
@@ -70,17 +93,14 @@ async def predict(
         raise HTTPException(status_code=400, detail="File provided is not an image.")
 
     try:
-        # Load model
-        model = get_model(model_name)
+        resolved_name = resolve_model_path(usecase, model_name, "predict")
+        model = get_model(resolved_name)
         
-        # Read image
         contents = await file.read()
         image = Image.open(io.BytesIO(contents))
 
-        # Run inference
         results = model(image, conf=threshold)
 
-        # Prepare JSON predictions
         predictions = []
         for r in results:
             boxes = r.boxes
@@ -95,9 +115,8 @@ async def predict(
                 })
 
         if format == "json":
-            return {"predictions": predictions, "model": model_name}
+            return {"predictions": predictions, "model": resolved_name}
 
-        # Handle image formats
         annotated_frame = results[0].plot()
         annotated_frame_rgb = annotated_frame[..., ::-1]
         img = Image.fromarray(annotated_frame_rgb)
@@ -107,7 +126,7 @@ async def predict(
         
         headers = {}
         if format == "image+metadata":
-            headers["X-Inference-Results"] = json.dumps({"predictions": predictions, "model": model_name})
+            headers["X-Inference-Results"] = json.dumps({"predictions": predictions, "model": resolved_name})
             
         return Response(
             content=buf.getvalue(), 
@@ -115,6 +134,8 @@ async def predict(
             headers=headers
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -125,7 +146,8 @@ async def predict(
 )
 async def classify(
     file: UploadFile = File(..., description="The image file to classify."),
-    model_name: str = Query(DEFAULT_CLS_MODEL, description="Ultralytics model name to use for classification."),
+    model_name: Optional[str] = Query(None, description="Ultralytics model name to use for classification."),
+    usecase: Optional[str] = Query(None, description="Load model from <DATA_DIR>/<usecase>/classify.pt"),
     x1: Optional[float] = Query(None, description="ROI left coordinate"),
     y1: Optional[float] = Query(None, description="ROI top coordinate"),
     x2: Optional[float] = Query(None, description="ROI right coordinate"),
@@ -135,21 +157,17 @@ async def classify(
         raise HTTPException(status_code=400, detail="File provided is not an image.")
 
     try:
-        # Load model
-        model = get_model(model_name)
+        resolved_name = resolve_model_path(usecase, model_name, "classify")
+        model = get_model(resolved_name)
         
-        # Read image
         contents = await file.read()
         image = Image.open(io.BytesIO(contents))
 
-        # Crop if ROI is provided
         if all(v is not None for v in [x1, y1, x2, y2]):
             image = image.crop((x1, y1, x2, y2))
 
-        # Run inference
         results = model(image)
         
-        # Parse results
         result = results[0]
         probs = result.probs
         
@@ -167,9 +185,11 @@ async def classify(
             "top1": {"class": model.names[top1_idx], "confidence": top1_conf},
             "top5": top5,
             "roi_used": {"x1": x1, "y1": y1, "x2": x2, "y2": y2} if all(v is not None for v in [x1, y1, x2, y2]) else None,
-            "model": model_name
+            "model": resolved_name
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
