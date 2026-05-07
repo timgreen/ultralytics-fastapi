@@ -1,5 +1,6 @@
 import os
 import io
+import json
 import numpy as np
 from typing import Literal
 from fastapi import FastAPI, File, UploadFile, HTTPException, Response, Query
@@ -33,20 +34,20 @@ async def root():
 @app.post(
     "/predict",
     summary="Run YOLO inference on an image",
-    description="Upload an image and receive either a JSON list of predictions or an annotated image."
+    description="Upload an image and receive JSON predictions, an annotated image, or both (image with JSON in headers)."
 )
 async def predict(
     file: UploadFile = File(..., description="The image file to run inference on."),
-    format: Literal["json", "image"] = Query(
+    format: Literal["json", "image", "image+metadata"] = Query(
         "json",
-        description="The desired response format. 'json' returns prediction metadata, 'image' returns the annotated image."
+        description="The desired response format. 'json' returns prediction metadata, 'image' returns the annotated image, 'image+metadata' returns the image with JSON metadata in the 'X-Inference-Results' header."
     )
 ):
     """
     Runs YOLOv8 inference on the uploaded image.
 
     - **file**: Image file (JPG, PNG, etc.)
-    - **format**: 'json' (default) or 'image'
+    - **format**: 'json' (default), 'image', or 'image+metadata'
     """
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File provided is not an image.")
@@ -59,20 +60,7 @@ async def predict(
         # Run inference
         results = model(image)
 
-        if format == "image":
-            # Plot results on the image
-            # annotated_frame is BGR numpy array
-            annotated_frame = results[0].plot()
-            # Convert BGR to RGB
-            annotated_frame_rgb = annotated_frame[..., ::-1]
-            img = Image.fromarray(annotated_frame_rgb)
-
-            # Save to buffer
-            buf = io.BytesIO()
-            img.save(buf, format="JPEG")
-            return Response(content=buf.getvalue(), media_type="image/jpeg")
-
-        # Default to JSON results
+        # Prepare JSON predictions
         predictions = []
         for r in results:
             boxes = r.boxes
@@ -92,7 +80,31 @@ async def predict(
                     "confidence": conf
                 })
 
-        return {"predictions": predictions}
+        if format == "json":
+            return {"predictions": predictions}
+
+        # Handle image formats
+        # Plot results on the image
+        # annotated_frame is BGR numpy array
+        annotated_frame = results[0].plot()
+        # Convert BGR to RGB
+        annotated_frame_rgb = annotated_frame[..., ::-1]
+        img = Image.fromarray(annotated_frame_rgb)
+
+        # Save to buffer
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG")
+        
+        headers = {}
+        if format == "image+metadata":
+            headers["X-Inference-Results"] = json.dumps({"predictions": predictions})
+            
+        return Response(
+            content=buf.getvalue(), 
+            media_type="image/jpeg",
+            headers=headers
+        )
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

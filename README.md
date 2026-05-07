@@ -57,7 +57,7 @@ docker run -p 8080:8080 ultralytics-fastapi
 **Endpoint**: `POST /predict`
 
 **Parameters**:
-- `format` (query string, optional): `json` (default) or `image`.
+- `format` (query string, optional): `json` (default), `image`, or `image+metadata`.
 
 **Request**: Multipart form-data with an `file` field containing the image.
 
@@ -71,6 +71,12 @@ curl -X POST -F "file=@path/to/your/image.jpg" http://localhost:8080/predict
 
 ```bash
 curl -X POST -F "file=@path/to/your/image.jpg" "http://localhost:8080/predict?format=image" --output results.jpg
+```
+
+**Example using `curl` (Image + Metadata response)**:
+Returns the image in the body and JSON in the `X-Inference-Results` header.
+```bash
+curl -v -X POST -F "file=@path/to/your/image.jpg" "http://localhost:8080/predict?format=image+metadata" --output results.jpg
 ```
 
 **Example Response**:
