@@ -30,7 +30,7 @@ os.chdir(DATA_DIR)
 app = FastAPI(
     title="Ultralytics YOLO FastAPI",
     description="A simple FastAPI wrapper for Ultralytics YOLO models.",
-    version="0.6.2"
+    version="0.6.3"
 )
 
 # Model Cache to avoid repeated loading
@@ -164,7 +164,26 @@ async def init_usecase(
 @app.post(
     "/predict",
     summary="Run YOLO detection on an image",
-    description="Inference for object detection."
+    description="Inference for object detection.",
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "predictions": [
+                            {
+                                "box": {"x1": 742.5, "y1": 49.3, "x2": 880.1, "y2": 312.4},
+                                "class": "person",
+                                "confidence": 0.92
+                            }
+                        ],
+                        "model": "yolo26n.pt"
+                    }
+                },
+                "image/jpeg": {}
+            }
+        }
+    }
 )
 async def predict(
     file: UploadFile = File(..., description="The image file to run inference on."),
@@ -218,7 +237,27 @@ async def predict(
 @app.post(
     "/classify",
     summary="Run YOLO classification on an image or ROI",
-    description="Inference for image classification."
+    description="Inference for image classification.",
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "top1": {"class": "tabby", "confidence": 0.85},
+                        "top5": [
+                            {"class": "tabby", "confidence": 0.85},
+                            {"class": "tiger cat", "confidence": 0.10},
+                            {"class": "Egyptian cat", "confidence": 0.02},
+                            {"class": "lynx", "confidence": 0.01},
+                            {"class": "leopard", "confidence": 0.01}
+                        ],
+                        "roi_used": {"x1": 100.0, "y1": 100.0, "x2": 400.0, "y2": 400.0},
+                        "model": "yolo26n-cls.pt"
+                    }
+                }
+            }
+        }
+    }
 )
 async def classify(
     file: UploadFile = File(..., description="The image file to classify."),
