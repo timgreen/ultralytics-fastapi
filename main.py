@@ -85,13 +85,14 @@ def get_model(model_name: str) -> YOLO:
     return model_cache[model_name]
 
 
-def save_request_image(image: Image.Image, usecase: str):
-    """Save the request image under <DATA_DIR>/<usecase>/saved/ with a timestamp."""
+def save_request_image(image: Image.Image, usecase: str, suffix: str = ""):
+    """Save the request image under <DATA_DIR>/<usecase>/saved/ with a timestamp and optional suffix."""
     saved_dir = os.path.join(DATA_DIR, usecase, "saved")
     os.makedirs(saved_dir, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    filepath = os.path.join(saved_dir, f"{timestamp}.jpg")
+    filename = f"{timestamp}_{suffix}.jpg" if suffix else f"{timestamp}.jpg"
+    filepath = os.path.join(saved_dir, filename)
 
     image.convert("RGB").save(filepath, "JPEG")
 
@@ -122,7 +123,7 @@ async def load_image_and_model(
     contents = await file.read()
     image = Image.open(io.BytesIO(contents))
 
-    # Optional storage
+    # Optional storage of original image
     if params.store_image and params.usecase:
         save_request_image(image, params.usecase)
 
@@ -130,6 +131,9 @@ async def load_image_and_model(
     if params.x1 is not None:
         try:
             image = image.crop((params.x1, params.y1, params.x2, params.y2))
+            # Optional storage of cropped image with suffix
+            if params.store_image and params.usecase:
+                save_request_image(image, params.usecase, suffix="roi")
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Failed to crop image with provided ROI: {str(e)}")
 
