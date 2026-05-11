@@ -37,23 +37,36 @@ app = FastAPI(
 model_cache: Dict[str, YOLO] = {}
 
 
-class InferenceParams:
+class InferenceParam:
     """Grouped parameters for model selection and image storage."""
     def __init__(
         self,
         model_name: str | None = Query(None, description="Ultralytics model name (e.g., yolo26n.pt)."),
         usecase: str | None = Query(None, description="Load model from <DATA_DIR>/<usecase>/<task>.pt."),
-        store_image: bool = Query(False, description="Save uploaded image under <usecase_dir>/saved/. Only works if 'usecase' is set.")
+        store_image: bool = Query(False, description="Save uploaded image under <usecase_dir>/saved/. Only works if 'usecase' is set."),
+        x1: float | None = Query(None, description="ROI left coordinate"),
+        y1: float | None = Query(None, description="ROI top coordinate"),
+        x2: float | None = Query(None, description="ROI right coordinate"),
+        y2: float | None = Query(None, description="ROI bottom coordinate")
     ):
         self.model_name = model_name
         self.usecase = usecase
         self.store_image = store_image
+        self.x1 = x1
+        self.y1 = y1
+        self.x2 = x2
+        self.y2 = y2
 
         # Validation logic
         if self.usecase and self.model_name:
             raise HTTPException(status_code=400, detail="Cannot use 'usecase' and 'model_name' together.")
         if self.store_image and not self.usecase:
             raise HTTPException(status_code=400, detail="'store_image' can only be used together with 'usecase'.")
+        
+        # ROI validation: either all ROI parameters must be present or none
+        roi_params = [self.x1, self.y1, self.x2, self.y2]
+        if any(v is not None for v in roi_params) and not all(v is not None for v in roi_params):
+            raise HTTPException(status_code=400, detail="All ROI coordinates (x1, y1, x2, y2) must be provided together.")
 
 
 def get_model(model_name: str) -> YOLO:
@@ -85,7 +98,7 @@ def save_request_image(image: Image.Image, usecase: str):
 
 async def load_image_and_model(
     file: UploadFile,
-    params: InferenceParams,
+    params: InferenceParam,
     task: str
 ) -> Tuple[Image.Image, YOLO, str]:
     """Shared logic for loading image, model, and handling storage."""
@@ -112,6 +125,13 @@ async def load_image_and_model(
     # Optional storage
     if params.store_image and params.usecase:
         save_request_image(image, params.usecase)
+
+    # ROI Cropping
+    if params.x1 is not None:
+        try:
+            image = image.crop((params.x1, params.y1, params.x2, params.y2))
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to crop image with provided ROI: {str(e)}")
 
     return image, model, resolved_name
 
@@ -177,7 +197,8 @@ async def init_usecase(
                                 "confidence": 0.92
                             }
                         ],
-                        "model": "yolo26n.pt"
+                        "model": "yolo26n.pt",
+                        "roi_used": {"x1": 100.0, "y1": 100.0, "x2": 400.0, "y2": 400.0}
                     }
                 },
                 "image/jpeg": {}
@@ -187,7 +208,7 @@ async def init_usecase(
 )
 async def predict(
     file: UploadFile = File(..., description="The image file to run inference on."),
-    params: InferenceParams = Depends(),
+    params: InferenceParam = Depends(),
     format: Literal["json", "image", "image+metadata"] = Query(
         "json",
         description="Response format. 'json', 'image', or 'image+metadata' (image with JSON in headers)."
@@ -211,8 +232,10 @@ async def predict(
                     "confidence": box.conf.item()
                 })
 
+        roi_info = {"x1": params.x1, "y1": params.y1, "x2": params.x2, "y2": params.y2} if params.x1 is not None else None
+
         if format == "json":
-            return {"predictions": predictions, "model": model_id}
+            return {"predictions": predictions, "model": model_id, "roi_used": roi_info}
 
         # Handle image response
         annotated_frame = results[0].plot()
@@ -224,7 +247,11 @@ async def predict(
 
         headers = {}
         if format == "image+metadata":
-            headers["X-Inference-Results"] = json.dumps({"predictions": predictions, "model": model_id})
+            headers["X-Inference-Results"] = json.dumps({
+                "predictions": predictions, 
+                "model": model_id,
+                "roi_used": roi_info
+            })
 
         return Response(content=buf.getvalue(), media_type="image/jpeg", headers=headers)
 
@@ -261,18 +288,10 @@ async def predict(
 )
 async def classify(
     file: UploadFile = File(..., description="The image file to classify."),
-    params: InferenceParams = Depends(),
-    x1: float | None = Query(None, description="ROI left coordinate"),
-    y1: float | None = Query(None, description="ROI top coordinate"),
-    x2: float | None = Query(None, description="ROI right coordinate"),
-    y2: float | None = Query(None, description="ROI bottom coordinate")
+    params: InferenceParam = Depends()
 ):
     try:
         image, model, model_id = await load_image_and_model(file, params, "classify")
-
-        # Crop if ROI provided
-        if all(v is not None for v in [x1, y1, x2, y2]):
-            image = image.crop((x1, y1, x2, y2))
 
         # Run inference
         results = model(image)
@@ -286,7 +305,7 @@ async def classify(
         return {
             "top1": {"class": model.names[probs.top1], "confidence": probs.top1conf.item()},
             "top5": top5,
-            "roi_used": {"x1": x1, "y1": y1, "x2": x2, "y2": y2} if all(v is not None for v in [x1, y1, x2, y2]) else None,
+            "roi_used": {"x1": params.x1, "y1": params.y1, "x2": params.x2, "y2": params.y2} if params.x1 is not None else None,
             "model": model_id
         }
 
